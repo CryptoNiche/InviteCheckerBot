@@ -34,4 +34,4 @@ bot.launch().then(() => console.log('Bot running'));
 
 // Graceful shutdown
 process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM'
+process.once('SIGTERM', () => bot.stop('SIGTERM')); // ✅ FIXED
