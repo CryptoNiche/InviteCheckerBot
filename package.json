@@ -1,0 +1,15 @@
+{
+  "name": "telegram-goodluck-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that tracks 'goodluck' messages",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.14.1",
+    "googleapis": "^121.0.0"
+  },
+  "author": "",
+  "license": "ISC"
+}
