@@ -1,88 +1,124 @@
 const { Telegraf } = require('telegraf');
 const { google } = require('googleapis');
 
-// === Load Environment Variables ===
+// === ENV ===
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
+const TARGET_GROUP_ID = process.env.TARGET_GROUP_ID;
 
-// === Telegram Bot Setup ===
+// === BOT ===
 const bot = new Telegraf(BOT_TOKEN);
 
-// === Google Sheets Setup ===
+// === GOOGLE SHEETS ===
 const auth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
+  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 const sheets = google.sheets({ version: 'v4', auth });
 
-// === In-memory tracker ===
-let userCounts = {}; // { user_id: { name, count } }
+// === MEMORY ===
+let userCounts = {};
+let lastSyncTime = null;
 
-// === Listen to Telegram messages ===
-bot.on('text', (ctx) => {
-    const message = ctx.message.text.trim().toLowerCase();
+// === MESSAGE LISTENER ===
+bot.on('text', async (ctx) => {
+  if (ctx.chat.id.toString() !== TARGET_GROUP_ID) return;
 
-    if (message === 'goodluck') {
-        const userId = ctx.from.id;
-        const userName = ctx.from.first_name + (ctx.from.last_name ? ` ${ctx.from.last_name}` : '');
+  const text = ctx.message.text.trim().toLowerCase();
 
-        if (!userCounts[userId]) {
-            userCounts[userId] = { name: userName, count: 1 };
-        } else {
-            userCounts[userId].count += 1;
-        }
+  if (text !== 'goodluck') return;
 
-        console.log(`${userName} (${userId}) sent goodluck! Total in memory: ${userCounts[userId].count}`);
-    }
+  const userId = ctx.from.id;
+  const name =
+    ctx.from.first_name +
+    (ctx.from.last_name ? ` ${ctx.from.last_name}` : '');
+  const username = ctx.from.username || '';
+  const timestamp = new Date().toISOString();
+  const groupName = ctx.chat.title || '';
+
+  // Count
+  if (!userCounts[userId]) {
+    userCounts[userId] = { name, count: 1 };
+  } else {
+    userCounts[userId].count++;
+  }
+
+  // Log entry
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'Logs!A:E',
+    valueInputOption: 'RAW',
+    resource: {
+      values: [[name, userId, username, timestamp, groupName]],
+    },
+  });
+
+  console.log(`GOODLUCK from ${name}`);
 });
 
-// === Batch sync function (every 2 minutes) ===
+// === SYNC FUNCTION ===
 async function syncToSheet() {
-    try {
-        console.log('Starting batch sync to Google Sheets...');
+  console.log('Syncing to Google Sheets...');
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: 'Sheet1!A:C',
+  });
 
-        const res = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: 'Sheet1!A:C'
-        });
+  const rows = res.data.values || [];
 
-        const rows = res.data.values || [];
+  for (let userId in userCounts) {
+    const { name, count } = userCounts[userId];
+    const rowIndex = rows.findIndex((r) => r[1] == userId);
 
-        for (let userId in userCounts) {
-            const { name, count } = userCounts[userId];
-            const rowIndex = rows.findIndex(row => row[1] == userId);
-
-            if (rowIndex === -1) {
-                // Append new user
-                await sheets.spreadsheets.values.append({
-                    spreadsheetId: SPREADSHEET_ID,
-                    range: 'Sheet1!A:C',
-                    valueInputOption: 'RAW',
-                    resource: { values: [[name, userId, count]] }
-                });
-            } else {
-                // Update existing count
-                await sheets.spreadsheets.values.update({
-                    spreadsheetId: SPREADSHEET_ID,
-                    range: `Sheet1!C${rowIndex + 1}`,
-                    valueInputOption: 'RAW',
-                    resource: { values: [[count]] }
-                });
-            }
-        }
-
-        console.log('Batch sync completed!');
-    } catch (err) {
-        console.error('Error syncing to Google Sheets:', err);
+    if (rowIndex === -1) {
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'Sheet1!A:C',
+        valueInputOption: 'RAW',
+        resource: { values: [[name, userId, count]] },
+      });
+    } else {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `Sheet1!C${rowIndex + 1}`,
+        valueInputOption: 'RAW',
+        resource: { values: [[count]] },
+      });
     }
+  }
+
+  lastSyncTime = new Date().toISOString();
+  console.log('Sync complete');
 }
 
-// === Schedule sync every 2 minutes ===
-setInterval(syncToSheet, 2 * 60 * 1000); // 2 minutes
+// === AUTO SYNC (2 MIN) ===
+setInterval(syncToSheet, 2 * 60 * 1000);
 
-// === Start Telegram bot ===
-bot.launch().then(() => console.log('Telegram Goodluck bot is running!'));
+// === DAILY RESET (midnight server time) ===
+setInterval(() => {
+  console.log('Daily reset');
+  userCounts = {};
+}, 24 * 60 * 60 * 1000);
 
-// === Graceful shutdown ===
+// === COMMANDS ===
+
+// /health
+bot.command('health', (ctx) => {
+  ctx.reply(
+    `✅ Bot is alive\n` +
+      `👥 Users tracked: ${Object.keys(userCounts).length}\n` +
+      `🕒 Last sync: ${lastSyncTime || 'Not yet'}`
+  );
+});
+
+// /sync
+bot.command('sync', async (ctx) => {
+  await syncToSheet();
+  ctx.reply('✅ Manual sync completed');
+});
+
+// === START ===
+bot.launch().then(() => console.log('Bot running'));
+
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
