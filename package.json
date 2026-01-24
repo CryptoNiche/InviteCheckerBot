@@ -1,13 +1,13 @@
 {
-  "name": "telegram-goodluck-bot",
+  "name": "goodluck-telegram-bot",
   "version": "1.0.0",
+  "description": "Telegram bot that logs goodluck messages to Google Sheets",
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js"
   },
   "dependencies": {
-    "node-telegram-bot-api": "^0.61.0",
-    "crypto": "^1.0.1",
-    "node-fetch": "^3.3.1"
+    "node-telegram-bot-api": "^0.66.0",
+    "googleapis": "^128.0.0"
   }
 }
