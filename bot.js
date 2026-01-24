@@ -4,7 +4,7 @@ const { google } = require("googleapis");
 // ================= CONFIG =================
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
-const PREFIXES = ["goodluck","#gatetreadfiii","#quiz123"];
+const PREFIXES = ["goodluck", "#gatetreadfiii", "#quiz123"];
 
 // 🔐 OWNER LOCK
 const OWNER_ID = 933749968;
