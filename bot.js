@@ -3,8 +3,8 @@ const { google } = require("googleapis");
 const path = require("path");
 
 // ================= CONFIG =================
-const BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE";
-const SHEET_ID = "PUT_YOUR_SHEET_ID_HERE";
+const BOT_TOKEN = process.env.BOT_TOKEN;
+const SHEET_ID = process.env.SHEET_ID;
 const PREFIX = "goodluck";
 
 // ================= TELEGRAM =================
