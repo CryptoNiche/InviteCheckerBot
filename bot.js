@@ -1,7 +1,5 @@
 const TelegramBot = require("node-telegram-bot-api");
 const { google } = require("googleapis");
-const fs = require("fs");
-const path = require("path");
 
 // ================= CONFIG =================
 const BOT_TOKEN = process.env.BOT_TOKEN;
@@ -11,36 +9,11 @@ const PREFIX = "goodluck";
 // 🔐 OWNER LOCK
 const OWNER_ID = 933749968;
 
-// persistence file
-const ENABLED_FILE = path.join(__dirname, "enabled_groups.json");
+// system sheet name
+const ENABLED_SHEET = "__enabled_groups__";
 
 // ================= TELEGRAM =================
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
-
-// ================= LOAD ENABLED GROUPS =================
-let enabledChats = new Set();
-
-function loadEnabledChats() {
-  try {
-    if (fs.existsSync(ENABLED_FILE)) {
-      const data = JSON.parse(fs.readFileSync(ENABLED_FILE));
-      enabledChats = new Set(data);
-      console.log("✅ Loaded enabled groups:", [...enabledChats]);
-    }
-  } catch (err) {
-    console.error("Failed to load enabled groups:", err.message);
-  }
-}
-
-function saveEnabledChats() {
-  try {
-    fs.writeFileSync(ENABLED_FILE, JSON.stringify([...enabledChats]));
-  } catch (err) {
-    console.error("Failed to save enabled groups:", err.message);
-  }
-}
-
-loadEnabledChats();
 
 // ================= GOOGLE SHEETS =================
 const credentials = JSON.parse(process.env.GOOGLE_CREDENTIALS);
@@ -51,6 +24,100 @@ const auth = new google.auth.GoogleAuth({
 });
 
 const sheets = google.sheets({ version: "v4", auth });
+
+// ================= ENABLED GROUP STORAGE =================
+let enabledChats = new Set();
+
+async function ensureEnabledSheet() {
+  const spreadsheet = await sheets.spreadsheets.get({
+    spreadsheetId: SHEET_ID,
+  });
+
+  const exists = spreadsheet.data.sheets.some(
+    (s) => s.properties.title === ENABLED_SHEET
+  );
+
+  if (!exists) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: SHEET_ID,
+      requestBody: {
+        requests: [{ addSheet: { properties: { title: ENABLED_SHEET } } }],
+      },
+    });
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: `${ENABLED_SHEET}!A:B`,
+      valueInputOption: "RAW",
+      requestBody: {
+        values: [["chat_id", "chat_title"]],
+      },
+    });
+
+    console.log("📄 Created enabled groups sheet");
+  }
+}
+
+async function loadEnabledChats() {
+  try {
+    await ensureEnabledSheet();
+
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SHEET_ID,
+      range: `${ENABLED_SHEET}!A2:A`,
+    });
+
+    const rows = res.data.values || [];
+    enabledChats = new Set(rows.map((r) => Number(r[0])));
+
+    console.log("✅ Loaded enabled groups:", [...enabledChats]);
+  } catch (err) {
+    console.error("Failed loading enabled groups:", err.message);
+  }
+}
+
+async function addEnabledChat(chatId, title) {
+  await ensureEnabledSheet();
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: `${ENABLED_SHEET}!A:B`,
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [[chatId, title]],
+    },
+  });
+
+  enabledChats.add(chatId);
+}
+
+async function removeEnabledChat(chatId) {
+  await ensureEnabledSheet();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SHEET_ID,
+    range: `${ENABLED_SHEET}!A2:B`,
+  });
+
+  const rows = res.data.values || [];
+  const filtered = rows.filter((r) => Number(r[0]) !== chatId);
+
+  await sheets.spreadsheets.values.clear({
+    spreadsheetId: SHEET_ID,
+    range: `${ENABLED_SHEET}!A2:B`,
+  });
+
+  if (filtered.length > 0) {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SHEET_ID,
+      range: `${ENABLED_SHEET}!A2:B`,
+      valueInputOption: "RAW",
+      requestBody: { values: filtered },
+    });
+  }
+
+  enabledChats.delete(chatId);
+}
 
 // ================= SHEET HELPERS =================
 function sanitizeSheetName(name) {
@@ -70,13 +137,7 @@ async function ensureSheetExists(sheetName) {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId: SHEET_ID,
       requestBody: {
-        requests: [
-          {
-            addSheet: {
-              properties: { title: sheetName },
-            },
-          },
-        ],
+        requests: [{ addSheet: { properties: { title: sheetName } } }],
       },
     });
 
@@ -127,32 +188,10 @@ bot.onText(/^\/start(@\w+)?$/, (msg) => {
   });
 });
 
-// Auto-enable when YOU add the bot to a group
-bot.on("new_chat_members", (msg) => {
-  const botAdded = msg.new_chat_members.some(
-    (m) => m.username === bot.me.username
-  );
+// Load enabled groups on startup
+loadEnabledChats();
 
-  if (!botAdded) return;
-
-  if (msg.from.id !== OWNER_ID) {
-    bot.sendMessage(
-      msg.chat.id,
-      "⛔ This bot is private and can only be configured by the owner."
-    );
-    return;
-  }
-
-  enabledChats.add(msg.chat.id);
-  saveEnabledChats();
-
-  bot.sendMessage(
-    msg.chat.id,
-    "🟢 Bot added by owner. Tracking automatically enabled."
-  );
-});
-
-// Button click handler (OWNER ONLY)
+// Button click handler
 bot.on("callback_query", async (query) => {
   const chat = query.message.chat;
   const userId = query.from.id;
@@ -177,8 +216,9 @@ bot.on("callback_query", async (query) => {
 
   // ENABLE
   if (query.data === "enable_tracking") {
-    enabledChats.add(chat.id);
-    saveEnabledChats();
+    if (!enabledChats.has(chat.id)) {
+      await addEnabledChat(chat.id, chat.title);
+    }
 
     bot.answerCallbackQuery(query.id, {
       text: `✅ Tracking enabled for: ${chat.title}`,
@@ -190,8 +230,9 @@ bot.on("callback_query", async (query) => {
 
   // DISABLE
   if (query.data === "disable_tracking") {
-    enabledChats.delete(chat.id);
-    saveEnabledChats();
+    if (enabledChats.has(chat.id)) {
+      await removeEnabledChat(chat.id);
+    }
 
     bot.answerCallbackQuery(query.id, {
       text: `❌ Tracking disabled for: ${chat.title}`,
