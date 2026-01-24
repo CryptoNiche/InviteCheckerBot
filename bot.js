@@ -248,8 +248,13 @@ bot.on("message", async (msg) => {
   if (!msg.text) return;
   if (!enabledChats.has(msg.chat.id)) return;
 
-  const text = msg.text.trim().toLowerCase();
-  if (!text.startsWith(PREFIX)) return;
+  const text = msg.text.toLowerCase();
+
+const matched = PREFIXES.some(prefix => {
+  return text.includes(prefix.toLowerCase());
+});
+
+if (!matched) return;
 
   const name = `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   const username = msg.from.username ? `@${msg.from.username}` : "N/A";
