@@ -38,8 +38,8 @@ async function logToSheet(row) {
 // ================= BOT COMMANDS =================
 
 // Start command
-bot.onText(/\/start/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Welcome! Click the button below inside a group to enable tracking.", {
+bot.onText(/^\/start(@\w+)?$/, (msg) => {
+  bot.sendMessage(msg.chat.id, "Welcome! Click the button below inside this group to enable tracking.", {
     reply_markup: {
       inline_keyboard: [
         [{ text: "✅ Enable Tracking", callback_data: "enable_tracking" }]
