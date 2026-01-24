@@ -69,7 +69,7 @@ bot.on("message", async (msg) => {
   if (!msg.text) return;
   if (!enabledChats.has(msg.chat.id)) return;
 
-  const text = msg.text.toLowerCase();
+  const text = msg.text.trim().toLowerCase();
   if (!text.startsWith(PREFIX)) return;
 
   const name = `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
