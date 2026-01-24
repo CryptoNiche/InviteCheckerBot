@@ -67,6 +67,9 @@ bot.on("callback_query", (query) => {
 // Listen to all messages
 bot.on("message", async (msg) => {
   if (!msg.text) return;
+
+  console.log("GROUP MSG:", msg.chat.title, msg.text);   // 👈 ADD THIS LINE
+
   if (!enabledChats.has(msg.chat.id)) return;
 
   const text = msg.text.trim().toLowerCase();
@@ -88,5 +91,6 @@ bot.on("message", async (msg) => {
     console.error("Google Sheet Error:", err.message);
   }
 });
+
 
 console.log("🤖 Bot is running...");
