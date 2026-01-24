@@ -1,123 +1,90 @@
 const TelegramBot = require("node-telegram-bot-api");
+const { google } = require("googleapis");
+const path = require("path");
 
-const TOKEN = process.env.BOT_TOKEN;
-if (!TOKEN) {
-    console.error("❌ BOT_TOKEN not set!");
-    process.exit(1);
+// ================= CONFIG =================
+const BOT_TOKEN = "PUT_YOUR_BOT_TOKEN_HERE";
+const SHEET_ID = "PUT_YOUR_SHEET_ID_HERE";
+const PREFIX = "goodluck";
+
+// ================= TELEGRAM =================
+const bot = new TelegramBot(BOT_TOKEN, { polling: true });
+
+// store enabled chats
+const enabledChats = new Set();
+
+// ================= GOOGLE SHEETS =================
+const auth = new google.auth.GoogleAuth({
+  keyFile: path.join(__dirname, "credentials.json"),
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+});
+
+const sheets = google.sheets({ version: "v4", auth });
+
+// ================= FUNCTIONS =================
+async function logToSheet(row) {
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SHEET_ID,
+    range: "Sheet1!A:F",
+    valueInputOption: "RAW",
+    requestBody: {
+      values: [row],
+    },
+  });
 }
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+// ================= BOT COMMANDS =================
 
-/**
- * SAME STRUCTURE AS YOUR WORKING BOT
- * userId -> { chatId: groupTitle }
- */
-const broadcastGroups = {};
-
-/**
- * userId -> selected groupId | null
- */
-const broadcastTargets = {};
-
-// ─────────────────────────────────────────────
-// ✅ AUTO REGISTER GROUPS (EXACT SAME AS WORKING BOT)
-// ─────────────────────────────────────────────
-bot.on("message", (msg) => {
-    const chat = msg.chat;
-    const userId = msg.from?.id;
-    if (!userId) return;
-
-    if (chat.type === "group" || chat.type === "supergroup") {
-        if (!broadcastGroups[userId]) {
-            broadcastGroups[userId] = {};
-        }
-
-        broadcastGroups[userId][chat.id] =
-            chat.title || "Unnamed Group";
-
-        console.log(
-            "📡 Registered group for user",
-            userId,
-            ":",
-            chat.title,
-            chat.id
-        );
+// Start command
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(msg.chat.id, "Welcome! Click the button below inside a group to enable tracking.", {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "✅ Enable Tracking", callback_data: "enable_tracking" }]
+      ]
     }
+  });
 });
 
-// ─────────────────────────────────────────────
-// /start → ALWAYS SHOW INLINE MENU (EVEN IF EMPTY)
-// ─────────────────────────────────────────────
-bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
-    const userId = msg.from.id;
+// Button click handler
+bot.on("callback_query", (query) => {
+  const chatId = query.message.chat.id;
 
-    if (msg.chat.type !== "private") return;
+  if (query.data === "enable_tracking") {
+    enabledChats.add(chatId);
 
-    const myGroups = broadcastGroups[userId] || {};
-    const keyboard = [];
-
-    // detected groups
-    for (const [id, name] of Object.entries(myGroups)) {
-        keyboard.push([
-            { text: name, callback_data: `broadcast_${id}` }
-        ]);
-    }
-
-    // ALWAYS add skip
-    keyboard.push([
-        { text: "⏭ Skip Broadcast", callback_data: "broadcast_skip" }
-    ]);
-
-    await bot.sendMessage(chatId, "📣 Where should this be broadcast?", {
-        reply_markup: { inline_keyboard: keyboard }
+    bot.answerCallbackQuery(query.id, {
+      text: "Tracking enabled for this chat!",
+      show_alert: true
     });
+
+    bot.sendMessage(chatId, "🟢 Tracking is now active in this chat.\nMessages starting with 'goodluck' will be logged.");
+  }
 });
 
-// ─────────────────────────────────────────────
-// INLINE BUTTON HANDLER
-// ─────────────────────────────────────────────
-bot.on("callback_query", async (query) => {
-    const userId = query.from.id;
-    const chatId = query.message.chat.id;
-    const data = query.data;
+// Listen to all messages
+bot.on("message", async (msg) => {
+  if (!msg.text) return;
+  if (!enabledChats.has(msg.chat.id)) return;
 
-    // Skip
-    if (data === "broadcast_skip") {
-        broadcastTargets[userId] = null;
+  const text = msg.text.toLowerCase();
+  if (!text.startsWith(PREFIX)) return;
 
-        await bot.editMessageText(
-            "⏭ Broadcast skipped.",
-            {
-                chat_id: chatId,
-                message_id: query.message.message_id
-            }
-        );
+  const name = `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
+  const username = msg.from.username ? `@${msg.from.username}` : "N/A";
+  const message = msg.text;
+  const chatTitle = msg.chat.title || "Private Chat";
+  const chatId = msg.chat.id;
+  const time = new Date().toLocaleString();
 
-        bot.answerCallbackQuery(query.id);
-        return;
-    }
+  const row = [time, name, username, message, chatTitle, chatId];
 
-    // Select group
-    if (data.startsWith("broadcast_")) {
-        const groupId = data.replace("broadcast_", "");
-        broadcastTargets[userId] = groupId;
-
-        const groupName =
-            broadcastGroups[userId]?.[groupId] || "Unknown Group";
-
-        await bot.editMessageText(
-            `✅ Broadcasting to:\n<b>${groupName}</b>`,
-            {
-                chat_id: chatId,
-                message_id: query.message.message_id,
-                parse_mode: "HTML"
-            }
-        );
-
-        bot.answerCallbackQuery(query.id);
-        return;
-    }
+  try {
+    await logToSheet(row);
+    console.log("Saved:", row);
+  } catch (err) {
+    console.error("Google Sheet Error:", err.message);
+  }
 });
 
-console.log("🤖 Bot is running…");
+console.log("🤖 Bot is running...");
