@@ -8,77 +8,86 @@ if (!TOKEN) {
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
-// ---------- STATE ----------
-const userGroups = {};      // userId -> { chatId: chatTitle }
-let targetGroupId = null;   // selected target group
-const goodluckCounts = {};  // userId -> { name, count, timestamps: [] }
+// ---------------- STATE ----------------
+const userGroups = {};        // userId -> { chatId: title }
+const userTargetGroup = {};   // userId -> chatId
+const goodluckCounts = {};    // userId -> { name, count }
 
-// ---------- START COMMAND ----------
+// ---------------- /start ----------------
 bot.onText(/\/start/, (msg) => {
-    const chatId = msg.chat.id;
+    if (msg.chat.type !== "private") return;
+
     const userId = msg.from.id;
-
-    if (msg.chat.type !== "private") {
-        return bot.sendMessage(chatId, "⚡ Please DM me to select the target group.");
-    }
-
     const groups = userGroups[userId] || {};
+
     if (Object.keys(groups).length === 0) {
-        return bot.sendMessage(chatId, "⚠️ No groups detected. Send a message in a group where I'm added first.");
+        return bot.sendMessage(
+            msg.chat.id,
+            "⚠️ No groups detected yet.\nSend any message in a group where I'm added."
+        );
     }
 
-    const buttons = Object.entries(groups).map(([id, title]) => [
-        { text: title, callback_data: `set_target_${id}` }
-    ]);
+    const keyboard = Object.entries(groups).map(([id, title]) => ([
+        { text: title, callback_data: `select_${id}` }
+    ]));
 
-    bot.sendMessage(chatId, "Select the target group for 'goodluck' tracking:", {
-        reply_markup: { inline_keyboard: buttons }
+    bot.sendMessage(msg.chat.id, "📌 Select target group:", {
+        reply_markup: { inline_keyboard: keyboard }
     });
 });
 
-// ---------- AUTO REGISTER GROUPS ----------
+// ---------------- GROUP DETECTION ----------------
 bot.on("message", (msg) => {
     const chat = msg.chat;
     const chatId = chat.id;
     const userId = msg.from.id;
 
-    // Register groups automatically
+    // 🔥 SAME AS YOUR WORKING BOT
     if (chat.type === "group" || chat.type === "supergroup") {
         if (!userGroups[userId]) userGroups[userId] = {};
         userGroups[userId][chatId] = chat.title || "Unnamed Group";
+        console.log("📡 Detected group:", chat.title);
     }
 
-    // Track "goodluck" messages in target group
-    if ((chat.type === "group" || chat.type === "supergroup") && targetGroupId) {
-        if (chatId.toString() === targetGroupId) {
-            if (msg.text && msg.text.toLowerCase() === "goodluck") {
-                const name = msg.from.first_name + (msg.from.last_name ? ` ${msg.from.last_name}` : "");
-                if (!goodluckCounts[msg.from.id]) {
-                    goodluckCounts[msg.from.id] = { name, count: 1, timestamps: [new Date()] };
-                } else {
-                    goodluckCounts[msg.from.id].count++;
-                    goodluckCounts[msg.from.id].timestamps.push(new Date());
-                }
+    // Track "goodluck"
+    const target = userTargetGroup[userId];
+    if (
+        target &&
+        chatId === target &&
+        msg.text &&
+        msg.text.toLowerCase() === "goodluck"
+    ) {
+        const name = msg.from.username || msg.from.first_name;
 
-                console.log(`GOODLUCK from ${name} | Total: ${goodluckCounts[msg.from.id].count}`);
-            }
+        if (!goodluckCounts[userId]) {
+            goodluckCounts[userId] = { name, count: 1 };
+        } else {
+            goodluckCounts[userId].count++;
         }
+
+        console.log(`🍀 GOODLUCK from ${name} (${goodluckCounts[userId].count})`);
     }
 });
 
-// ---------- INLINE BUTTON HANDLER ----------
+// ---------------- INLINE BUTTONS ----------------
 bot.on("callback_query", (query) => {
     const userId = query.from.id;
     const data = query.data;
 
-    if (data.startsWith("set_target_")) {
-        targetGroupId = data.replace("set_target_", "");
-        bot.editMessageText(`✅ Group set for 'goodluck': ${userGroups[userId][targetGroupId]}`, {
-            chat_id: query.message.chat.id,
-            message_id: query.message.message_id
-        });
-        bot.answerCallbackQuery(query.id);
+    if (data.startsWith("select_")) {
+        const chatId = Number(data.replace("select_", ""));
+        userTargetGroup[userId] = chatId;
+
+        bot.editMessageText(
+            `✅ Target group set:\n${userGroups[userId][chatId]}`,
+            {
+                chat_id: query.message.chat.id,
+                message_id: query.message.message_id
+            }
+        );
     }
+
+    bot.answerCallbackQuery(query.id);
 });
 
 console.log("🤖 Bot running...");
