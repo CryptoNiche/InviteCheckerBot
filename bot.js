@@ -2,30 +2,25 @@ const TelegramBot = require("node-telegram-bot-api");
 
 const TOKEN = process.env.BOT_TOKEN;
 if (!TOKEN) {
-    console.error("❌ BOT_TOKEN not set");
+    console.error("❌ BOT_TOKEN not set!");
     process.exit(1);
 }
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 
 /**
- * userGroups:
- * {
- *   userId: {
- *     chatId: chatTitle
- *   }
- * }
+ * SAME STRUCTURE AS YOUR WORKING BOT
+ * userId -> { chatId: groupTitle }
  */
-const userGroups = {};
+const broadcastGroups = {};
 
 /**
- * selected broadcast target per user
- * userId -> chatId | null
+ * userId -> selected groupId | null
  */
-const broadcastTarget = {};
+const broadcastTargets = {};
 
 // ─────────────────────────────────────────────
-// AUTO-DETECT GROUPS (NO ADMIN REQUIRED)
+// ✅ AUTO REGISTER GROUPS (EXACT SAME AS WORKING BOT)
 // ─────────────────────────────────────────────
 bot.on("message", (msg) => {
     const chat = msg.chat;
@@ -33,11 +28,17 @@ bot.on("message", (msg) => {
     if (!userId) return;
 
     if (chat.type === "group" || chat.type === "supergroup") {
-        if (!userGroups[userId]) userGroups[userId] = {};
-        userGroups[userId][chat.id] = chat.title || "Unnamed Group";
+        if (!broadcastGroups[userId]) {
+            broadcastGroups[userId] = {};
+        }
+
+        broadcastGroups[userId][chat.id] =
+            chat.title || "Unnamed Group";
 
         console.log(
-            `📡 Group detected for user ${userId}:`,
+            "📡 Registered group for user",
+            userId,
+            ":",
             chat.title,
             chat.id
         );
@@ -45,53 +46,53 @@ bot.on("message", (msg) => {
 });
 
 // ─────────────────────────────────────────────
-// /start → ALWAYS SHOW INLINE BUTTONS
+// /start → ALWAYS SHOW INLINE MENU (EVEN IF EMPTY)
 // ─────────────────────────────────────────────
-bot.onText(/\/start/, (msg) => {
+bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
     if (msg.chat.type !== "private") return;
 
-    const groups = userGroups[userId] || {};
-
+    const myGroups = broadcastGroups[userId] || {};
     const keyboard = [];
 
-    // add detected groups (if any)
-    for (const [id, title] of Object.entries(groups)) {
+    // detected groups
+    for (const [id, name] of Object.entries(myGroups)) {
         keyboard.push([
-            { text: title, callback_data: `broadcast_${id}` }
+            { text: name, callback_data: `broadcast_${id}` }
         ]);
     }
 
-    // ALWAYS show Skip
+    // ALWAYS add skip
     keyboard.push([
         { text: "⏭ Skip Broadcast", callback_data: "broadcast_skip" }
     ]);
 
-    bot.sendMessage(chatId, "📣 Where should this be broadcast?", {
-        reply_markup: {
-            inline_keyboard: keyboard
-        }
+    await bot.sendMessage(chatId, "📣 Where should this be broadcast?", {
+        reply_markup: { inline_keyboard: keyboard }
     });
 });
 
 // ─────────────────────────────────────────────
 // INLINE BUTTON HANDLER
 // ─────────────────────────────────────────────
-bot.on("callback_query", (query) => {
+bot.on("callback_query", async (query) => {
     const userId = query.from.id;
     const chatId = query.message.chat.id;
     const data = query.data;
 
     // Skip
     if (data === "broadcast_skip") {
-        broadcastTarget[userId] = null;
+        broadcastTargets[userId] = null;
 
-        bot.editMessageText("⏭ Broadcast skipped.", {
-            chat_id: chatId,
-            message_id: query.message.message_id
-        });
+        await bot.editMessageText(
+            "⏭ Broadcast skipped.",
+            {
+                chat_id: chatId,
+                message_id: query.message.message_id
+            }
+        );
 
         bot.answerCallbackQuery(query.id);
         return;
@@ -100,12 +101,12 @@ bot.on("callback_query", (query) => {
     // Select group
     if (data.startsWith("broadcast_")) {
         const groupId = data.replace("broadcast_", "");
-        broadcastTarget[userId] = groupId;
+        broadcastTargets[userId] = groupId;
 
         const groupName =
-            userGroups[userId]?.[groupId] || "Unknown Group";
+            broadcastGroups[userId]?.[groupId] || "Unknown Group";
 
-        bot.editMessageText(
+        await bot.editMessageText(
             `✅ Broadcasting to:\n<b>${groupName}</b>`,
             {
                 chat_id: chatId,
@@ -119,4 +120,4 @@ bot.on("callback_query", (query) => {
     }
 });
 
-console.log("🤖 Bot is running...");
+console.log("🤖 Bot is running…");
