@@ -7,7 +7,7 @@ const SHEET_ID = process.env.SHEET_ID;
 const PREFIXES = ["goodluck", "#gatetreadfiii", "#quiz123", "#Dj123"];
 
 // 🔐 OWNER LOCK
-const OWNER_ID = 933749968;
+const OWNER_ID = 933749968,8179916179;
 
 // system sheet name
 const ENABLED_SHEET = "__enabled_groups__";
