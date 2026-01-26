@@ -245,20 +245,23 @@ bot.on("callback_query", async (query) => {
 
 // ================= MESSAGE LISTENER =================
 bot.on("message", async (msg) => {
-  if (!msg.text) return;
+  // ✅ Check BOTH text and caption
+  const messageText = msg.text || msg.caption;
+  
+  if (!messageText) return;
   if (!enabledChats.has(msg.chat.id)) return;
 
-  const text = msg.text.toLowerCase();
+  const text = messageText.toLowerCase();
 
-const matched = PREFIXES.some(prefix => {
-  return text.includes(prefix.toLowerCase());
-});
+  const matched = PREFIXES.some(prefix => {
+    return text.includes(prefix.toLowerCase());
+  });
 
-if (!matched) return;
+  if (!matched) return;
 
   const name = `${msg.from.first_name || ""} ${msg.from.last_name || ""}`.trim();
   const username = msg.from.username ? `@${msg.from.username}` : "N/A";
-  const message = msg.text;
+  const message = messageText;
   const chatTitle = msg.chat.title || "Private Chat";
   const chatId = msg.chat.id;
   const time = new Date().toLocaleString();
