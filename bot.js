@@ -174,18 +174,25 @@ function isOwner(userId) {
 
 // ================= BOT COMMANDS =================
 
-// Start command
-bot.onText(/^\/start(@\w+)?$/, (msg) => {
-  bot.sendMessage(msg.chat.id, "Control panel (owner only):", {
-    reply_markup: {
-      inline_keyboard: [
-        [
-          { text: "✅ Enable Tracking", callback_data: "enable_tracking" },
-          { text: "❌ Disable Tracking", callback_data: "disable_tracking" },
+// Start command - FIXED: Only responds to /start@NexDeskCheckerBot
+bot.onText(/^\/start@(\w+)$/, async (msg, match) => {
+  const mentionedBot = match[1]; // Get the username from the regex capture group
+  const botInfo = await bot.getMe();
+  
+  // Only respond if the mentioned username matches this bot
+  if (mentionedBot.toLowerCase() === botInfo.username.toLowerCase()) {
+    bot.sendMessage(msg.chat.id, "Control panel (owner only):", {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "✅ Enable Tracking", callback_data: "enable_tracking" },
+            { text: "❌ Disable Tracking", callback_data: "disable_tracking" },
+          ],
         ],
-      ],
-    },
-  });
+      },
+    });
+  }
+  // If username doesn't match, do nothing (command is for another bot)
 });
 
 // Load enabled groups on startup
