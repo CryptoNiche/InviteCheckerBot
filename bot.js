@@ -4,13 +4,17 @@ const { google } = require("googleapis");
 // ================= CONFIG =================
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
-const PREFIXES = ["goodluck", "#GTFuturesPnL", "#GTfuturespnl", "Thanks for inviting me", "#quiz123", "#Dj123"];
+const PREFIXES = ["goodluck", "#GTFuturesPnL", "#GTfuturespnl", "Thanks for inviting me", "#quiz123", "#Dj123", "#GateTradFiMetals"];
 
 // 🔐 OWNER LOCK
 const OWNER_ID = [933749968, 8179916179];
 
 // system sheet name
 const ENABLED_SHEET = "__enabled_groups__";
+
+// ================= BATCH QUEUE =================
+const messageQueue = [];
+const BATCH_INTERVAL = 20000; // 20 seconds
 
 // ================= TELEGRAM =================
 const bot = new TelegramBot(BOT_TOKEN, { polling: true });
@@ -167,6 +171,43 @@ async function logToSheet(sheetName, row) {
   });
 }
 
+// ================= BATCH WRITER =================
+async function processBatch() {
+  if (messageQueue.length === 0) return;
+
+  // Group messages by sheet name
+  const grouped = {};
+  
+  while (messageQueue.length > 0) {
+    const item = messageQueue.shift();
+    if (!grouped[item.sheetName]) {
+      grouped[item.sheetName] = [];
+    }
+    grouped[item.sheetName].push(item.row);
+  }
+
+  // Write all groups
+  for (const [sheetName, rows] of Object.entries(grouped)) {
+    try {
+      await ensureSheetExists(sheetName);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SHEET_ID,
+        range: `${sheetName}!A:F`,
+        valueInputOption: "RAW",
+        requestBody: {
+          values: rows,
+        },
+      });
+      console.log(`✅ Batch saved ${rows.length} messages to ${sheetName}`);
+    } catch (err) {
+      console.error(`❌ Batch error for ${sheetName}:`, err.message);
+    }
+  }
+}
+
+// Start batch processor
+setInterval(processBatch, BATCH_INTERVAL);
+
 // ================= OWNER CHECK =================
 function isOwner(userId) {
   return OWNER_ID.includes(userId);
@@ -276,12 +317,9 @@ bot.on("message", async (msg) => {
   const sheetName = sanitizeSheetName(chatTitle || `chat_${chatId}`);
   const row = [time, name, username, message, chatTitle, chatId];
 
-  try {
-    await logToSheet(sheetName, row);
-    console.log("Saved to", sheetName, row);
-  } catch (err) {
-    console.error("Google Sheet Error:", err.message);
-  }
+  // Add to queue instead of writing immediately
+  messageQueue.push({ sheetName, row });
+  console.log(`📝 Queued message (${messageQueue.length} in queue)`);
 });
 
-console.log("🤖 Bot is running...");
+console.log("🤖 Bot is running with 20-second batch processing...");
