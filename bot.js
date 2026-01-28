@@ -4,7 +4,7 @@ const { google } = require("googleapis");
 // ================= CONFIG =================
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const SHEET_ID = process.env.SHEET_ID;
-const PREFIXES = ["goodluck", "#GTFuturesPnL", "#GTfuturespnl", "Thanks for inviting me", "#quiz123", "#Dj123", "#GateTradFiMetals"];
+const PREFIXES = ["goodluck", "#GTFuturesPnL", "#GTfuturespnl", "Thanks for inviting me", "#quiz123", "#Dj123", "D. 1g #GateTradFiMetals" ,"B. Safe-haven #GateTradFiMetals", " A. Gold (XAU), Silver (XAG), Platinum (XPT), Copper (XCU) #GateTradFiMetals"];
 
 // 🔐 OWNER LOCK
 const OWNER_ID = [933749968, 8179916179];
